@@ -1,0 +1,2 @@
+# rustflow: let the logged-in desktop user create virtual keyboard/mouse devices.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

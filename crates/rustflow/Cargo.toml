@@ -1,0 +1,36 @@
+[package]
+name = "rustflow"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+bytes = "1.12.1"
+clap = { version = "4.6.7", features = ["derive"] }
+futures = "0.3.34"
+gethostname = "1.1.0"
+rustflow-proto = { version = "0.1.0", path = "../rustflow-proto" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["full"] }
+tokio-util = { version = "0.7.20", features = ["codec"] }
+toml = "1.2.1"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+arboard = "3.7.0"
+core-foundation = "0.10.1"
+core-graphics = "0.25.0"
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSPasteboard", "NSPasteboardItem"] }
+objc2-foundation = { version = "0.3.2", features = ["NSString", "NSArray", "NSURL"] }
+tao = "0.37.2"
+tray-icon = "0.26.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.14.0", default-features = false, features = ["tokio", "remote_desktop", "screencast", "clipboard"] }
+evdev = "0.13.2"
+ksni = { version = "0.3.7", features = ["tokio"] }

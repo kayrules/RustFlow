@@ -1,0 +1,14 @@
+# RustFlow on Linux: ~/.config/rustflow/config.toml
+# Linux receives the Mac's keyboard and mouse and waits for it to connect.
+
+role = "serve"
+listen = "0.0.0.0:24801"
+peer_name = "Mac"
+
+# Let the Mac's "Wake" menu item turn this screen on and unlock it.
+# Anyone holding the shared token can then unlock this machine.
+allow_remote_unlock = false
+
+# Unlock this screen when the Mac's pointer moves onto it.
+# Anyone using the Mac can then use this machine without a password.
+unlock_on_enter = false

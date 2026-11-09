@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = ["crates/rustflow-proto", "crates/rustflow"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+repository = "https://github.com/kayrules/RustFlow"
+description = "Share keyboard, mouse, clipboard and files between a Mac and a Linux PC"

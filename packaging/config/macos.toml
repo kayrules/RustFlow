@@ -1,0 +1,27 @@
+# RustFlow on the Mac: ~/.config/rustflow/config.toml
+# The Mac shares its keyboard and mouse and connects to the Linux machine.
+
+role = "connect"
+
+# Address of the Linux machine (LAN IP, hostname or Tailscale name).
+peer = "@PEER@"
+# Name shown in the menu bar.
+peer_name = "@PEER_NAME@"
+
+[input]
+# Which side of the Mac screen the Linux screen sits on: "left" or "right".
+peer_side = "@PEER_SIDE@"
+# Cmd+C / Cmd+V become Ctrl+C / Ctrl+V on Linux (Control becomes Super).
+swap_cmd_ctrl = true
+# Pointer speed on Linux (1.0 = one Mac point per Linux pixel).
+speed = 1.0
+
+[files]
+# SSH host for the Linux machine; pasted files are copied with scp.
+# Leave empty to turn off file copy/paste.
+ssh_host = "@SSH_HOST@"
+
+# Uncomment to wake the Linux machine from the menu (Wake-on-LAN).
+# [wol]
+# mac = "02:00:5e:10:20:30"        # MAC address of its network card
+# broadcast = "192.168.1.255"      # broadcast address of your LAN
