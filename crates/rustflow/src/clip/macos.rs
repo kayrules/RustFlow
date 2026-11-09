@@ -39,9 +39,9 @@ pub fn spawn(
                         board.set_text(text).context("cannot write clipboard")?;
                         seen = change_count();
                     }
-                    Ok(ClipEvent::Files { files, .. }) => {
-                        // Pasting peer files into Finder comes in a later step.
-                        debug!(count = files.len(), "peer copied files (not yet pasteable on macOS)");
+                    Ok(ClipEvent::Files { id, files: list }) => {
+                        debug!(id, count = list.len(), "peer copied files; ready to paste");
+                        super::macos_paste::offer(id, list, files.clone());
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => return Ok(()),
@@ -51,6 +51,11 @@ pub fn spawn(
             let now = change_count();
             if now != seen {
                 seen = now;
+                if super::macos_paste::is_ours() {
+                    // Peer files we put there; reading them would start the transfer.
+                    std::thread::sleep(POLL_EVERY);
+                    continue;
+                }
                 let paths = copied_files();
                 if !paths.is_empty() {
                     let (id, list) = files.offer_local(paths);

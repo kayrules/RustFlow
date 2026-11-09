@@ -13,6 +13,10 @@ use crate::files::FileBroker;
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "macos")]
+mod macos_paste;
+#[cfg(target_os = "macos")]
+pub use macos_paste::withdraw as withdraw_peer_files;
 
 /// What is on a clipboard.
 #[derive(Debug, Clone)]

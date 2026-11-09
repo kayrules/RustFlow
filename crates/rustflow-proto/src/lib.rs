@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 pub const DEFAULT_PORT: u16 = 24801;
 /// Largest frame we accept. Clipboard text above this is dropped.
 pub const MAX_FRAME_LEN: usize = 16 * 1024 * 1024;
@@ -57,6 +57,9 @@ pub struct FileInfo {
     /// Size in bytes (0 for folders).
     pub size: u64,
     pub is_dir: bool,
+    /// Absolute path on the machine that copied it (for pulling with scp).
+    #[serde(default)]
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,7 +98,7 @@ mod tests {
             Message::ClipboardText { text: "hai 👋\nline 2".into() },
             Message::ClipboardFiles {
                 id: 7,
-                files: vec![FileInfo { name: "a b.pdf".into(), size: 10, is_dir: false }],
+                files: vec![FileInfo { name: "a b.pdf".into(), size: 10, is_dir: false, path: "/x/a b.pdf".into() }],
             },
             Message::FetchFiles { id: 7, dest: "/tmp/x".into() },
             Message::FilesReady { id: 7 },

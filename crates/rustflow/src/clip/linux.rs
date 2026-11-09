@@ -166,6 +166,19 @@ async fn run(
                 if ev.session_is_owner() == Some(true) {
                     continue; // our own set_selection
                 }
+                if ev.mime_types().iter().any(|t| t == GNOME_FILES_MIME) {
+                    // Files copied in GNOME Files: offer them to the peer.
+                    match read_selection(cb, session, GNOME_FILES_MIME).await.map(|s| parse_copied_files(&s)) {
+                        Ok(paths) if !paths.is_empty() => {
+                            let (id, files) = broker.offer_local(paths);
+                            debug!(id, count = files.len(), "local file copy");
+                            let _ = changes.send(ClipEvent::Files { id, files });
+                        }
+                        Ok(_) => {}
+                        Err(e) => warn!("cannot read copied files: {e:#}"),
+                    }
+                    continue;
+                }
                 let Some(mime) = TEXT_MIMES
                     .iter()
                     .find(|m| ev.mime_types().iter().any(|t| t == *m))
@@ -244,12 +257,7 @@ async fn serve_files(portal: Portal, broker: FileBroker, remote: Arc<RemoteFiles
                 tokio::time::sleep(PROGRESS_AFTER).await;
                 Progress::show(&files)
             });
-            let result = async {
-                std::fs::create_dir_all(&dest).with_context(|| format!("cannot create {}", dest.display()))?;
-                broker.fetch(remote.id, &dest).await?;
-                Ok::<_, anyhow::Error>(remote.paths())
-            }
-            .await;
+            let result = broker.fetch(remote.id, &remote.files, &dest).await.map(|()| remote.paths());
             // Close the window if it opened; otherwise make sure it never does.
             progress.abort();
             drop(progress.await);
@@ -316,6 +324,36 @@ fn file_uri(path: &Path) -> String {
         }
     }
     uri
+}
+
+/// Paths from `x-special/gnome-copied-files` ("copy" or "cut", then URIs).
+fn parse_copied_files(text: &str) -> Vec<PathBuf> {
+    text.lines()
+        .skip(1)
+        .filter_map(|uri| uri.trim_end_matches('\0').trim().strip_prefix("file://"))
+        .map(|path| PathBuf::from(percent_decode(path)))
+        .collect()
+}
+
+fn percent_decode(s: &str) -> String {
+    fn hex(b: u8) -> Option<u8> {
+        (b as char).to_digit(16).map(|d| d as u8)
+    }
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push(hi << 4 | lo);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn file_list(mime: &str, paths: &[PathBuf]) -> String {
@@ -395,6 +433,17 @@ mod tests {
         assert_eq!(file_uri(&p), "file:///home/k/.cache/rustflow/clipboard/1/My%20File%20%281%29.pdf");
         assert_eq!(gnome_copied_files(&[p.clone()]), format!("copy\n{}", file_uri(&p)));
         assert_eq!(uri_list(&[p.clone()]), format!("{}\r\n", file_uri(&p)));
+    }
+
+    #[test]
+    fn parses_copied_files() {
+        let text = "copy\nfile:///home/k/My%20File%20%281%29.pdf\nfile:///tmp/a";
+        assert_eq!(
+            parse_copied_files(text),
+            vec![PathBuf::from("/home/k/My File (1).pdf"), PathBuf::from("/tmp/a")]
+        );
+        let p = PathBuf::from("/home/k/a b%.txt");
+        assert_eq!(parse_copied_files(&gnome_copied_files(&[p.clone()])), vec![p]);
     }
 
     #[test]

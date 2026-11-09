@@ -1,6 +1,6 @@
 //! State shared between the network/clipboard core and the tray UI.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -77,6 +77,8 @@ pub struct Shared {
     sync: Arc<AtomicBool>,
     wake_at: Arc<Mutex<Option<Instant>>>,
     wake_signal: Arc<Notify>,
+    /// Open peer connections; a reconnect can overlap the old one closing.
+    connections: Arc<AtomicUsize>,
     /// Whether the peer may unlock this machine's screen.
     pub allow_remote_unlock: bool,
 }
@@ -93,6 +95,7 @@ impl Default for Shared {
             sync: Arc::new(AtomicBool::new(true)),
             wake_at: Arc::default(),
             wake_signal: Arc::default(),
+            connections: Arc::default(),
             allow_remote_unlock: false,
         }
     }
@@ -105,6 +108,18 @@ impl Shared {
 
     pub fn set_peer(&self, peer: Option<String>) {
         self.status.send_if_modified(|s| replace(&mut s.peer, peer));
+    }
+
+    pub fn peer_connected(&self, host: String) {
+        self.connections.fetch_add(1, Ordering::Relaxed);
+        self.set_peer(Some(host));
+    }
+
+    /// Only shows "waiting" once no connection is left.
+    pub fn peer_disconnected(&self) {
+        if self.connections.fetch_sub(1, Ordering::Relaxed) == 1 {
+            self.set_peer(None);
+        }
     }
 
     pub fn set_input(&self, line: String) {

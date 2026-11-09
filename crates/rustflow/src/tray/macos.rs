@@ -113,6 +113,8 @@ pub fn run(cfg: Config, token: Result<String>) -> Result<()> {
                 }
                 info!("rustflow menu bar app started");
             }
+            // Logout or shutdown: same as Quit.
+            Event::LoopDestroyed => crate::clip::withdraw_peer_files(),
             Event::UserEvent(UserEvent::Status(status)) => {
                 peer_item.set_text(status.peer_line(&peer_label));
                 clip_item.set_text(status.clipboard_line());
@@ -128,6 +130,7 @@ pub fn run(cfg: Config, token: Result<String>) -> Result<()> {
             }
             Event::UserEvent(UserEvent::Menu(e)) => {
                 if e.id == *quit_item.id() {
+                    crate::clip::withdraw_peer_files();
                     *control_flow = ControlFlow::Exit;
                 } else if e.id == *sync_item.id() {
                     shared.set_sync(sync_item.is_checked());

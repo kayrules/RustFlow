@@ -1996,6 +1996,7 @@ dependencies = [
  "clap",
  "core-foundation",
  "core-graphics",
+ "dispatch2",
  "evdev",
  "futures",
  "gethostname",

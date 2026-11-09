@@ -24,10 +24,11 @@ type into the Linux lock screen.
 - **Clipboard sync (both ways, text).** Copy on one machine, paste on the
   other. On GNOME Wayland this uses the official Clipboard portal, so it works
   for a background app without hacks.
-- **File copy/paste (Mac → Linux).** Copy files in Finder, paste them in
-  GNOME Files (folders should work too but are untested). Only the file names cross when you copy; the content is
-  sent with `scp` when you actually paste. A progress window appears for slow
-  transfers.
+- **File copy/paste (both ways).** Copy files in Finder and paste them in
+  GNOME Files, or the other way round (folders should work too but are
+  untested). Only names and paths cross when you copy; the content is copied
+  with `scp` when you actually paste, so copying and pasting on the same
+  machine costs nothing. A progress window appears for slow transfers.
 - **Wake.** The menu item *Wake &lt;peer&gt;* sends a Wake-on-LAN packet and,
   once connected, turns the Linux screen on and (optionally) unlocks it.
 - **Optional unlock on enter.** Linux can unlock itself when the Mac pointer
@@ -45,8 +46,15 @@ type into the Linux lock screen.
   other desktops are untested.
 - **The clipboard pauses while Linux is locked.** GNOME refuses portal
   sessions on the lock screen; sync resumes by itself after unlocking.
-- **File paste is Mac → Linux only**, and it needs password-less SSH from the
-  Mac to Linux. Pasting Linux files into Finder is not done yet.
+- **File paste needs password-less SSH from the Mac to Linux** (the Mac runs
+  `scp` in both directions).
+- **Apps that read the clipboard as soon as it changes can start a transfer
+  early.** GNOME Files and the Desktop Icons extension do this on Linux and
+  are handled. On the Mac, Linux files are kept off Universal Clipboard and
+  marked so clipboard managers skip them, but a manager that ignores those
+  markers would still trigger the copy.
+- **Finder waits for the whole transfer** when pasting Linux files; very large
+  files may hit macOS's paste timeout (untested beyond a few GB).
 - **Text clipboard only**: images and rich text are not synced.
 - **No encryption.** The connection is plain TCP authenticated with a shared
   token. Use it on a trusted LAN or over a VPN such as Tailscale. File
@@ -76,7 +84,7 @@ type into the Linux lock screen.
 - Both machines on the same network (or a VPN), TCP port **24801** reachable
   on the Linux machine.
 - For file paste: `ssh <linux-host>` from the Mac must work without a
-  password (SSH key).
+  password (SSH key), and `scp` must be available on both machines.
 
 ## Installation
 
@@ -158,6 +166,15 @@ Restart RustFlow after editing (menu › Quit, then open it again).
 Logs: `~/Library/Logs/rustflow/rustflow.log` (Mac),
 `~/.local/state/rustflow/rustflow.log` (Linux).
 
+### Tray icon
+
+| Colour | Meaning |
+|---|---|
+| Green | Connected to the other machine, clipboard ready |
+| Orange | Waiting for the other machine, or the clipboard is starting |
+| Red | Something failed (e.g. clipboard unavailable); see the menu or the log |
+| Grey | Clipboard sync paused from the menu |
+
 ### Command line
 
 ```text
@@ -205,7 +222,6 @@ paste, `net.rs` transport, `tray/` menu bar and tray UIs).
 ## TODO
 
 - [ ] Installers: signed and notarized `.dmg` for macOS, `.deb` for Ubuntu
-- [ ] File paste Linux → Mac (lazy Finder paste)
 - [ ] Encrypted connection (TLS with pairing)
 - [ ] Image and rich-text clipboard
 - [ ] Forward media keys (volume, brightness)
@@ -213,6 +229,7 @@ paste, `net.rs` transport, `tray/` menu bar and tray UIs).
 - [ ] Auto Wake-on-LAN when the pointer is pushed toward a sleeping peer
 - [ ] Proper multi-monitor layout on both sides
 - [ ] Transfer progress for file paste (bytes, not just a spinner)
+- [ ] File paste without SSH (transfer over the RustFlow connection)
 - [ ] Other Linux desktops (KDE Plasma, X11)
 - [ ] App icon
 

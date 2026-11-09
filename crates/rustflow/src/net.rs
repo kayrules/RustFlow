@@ -130,11 +130,11 @@ async fn connect(server: &str, token: &str, link: Link, shared: &Shared) -> Resu
 
 /// Show the peer as connected for as long as the relay runs.
 async fn run_relay(conn: Conn, link: Link, shared: &Shared, host: String) -> Result<()> {
-    shared.set_peer(Some(host));
+    shared.peer_connected(host);
     let result = relay(conn, &link, shared).await;
     link.input.on_disconnect();
     link.clip.files.fail_pending();
-    shared.set_peer(None);
+    shared.peer_disconnected();
     result
 }
 
