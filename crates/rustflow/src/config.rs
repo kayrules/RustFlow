@@ -30,6 +30,17 @@ pub enum Side {
     Right,
 }
 
+/// How Mac keys behave on Linux.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyboardStyle {
+    /// Mac shortcuts do what they do on a Mac (⌘C copies, ⌘Tab switches apps).
+    #[default]
+    Mac,
+    /// Keys map by position like a PC keyboard (⌘ = Super, ⌥ = Alt).
+    Linux,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Input {
@@ -37,15 +48,14 @@ pub struct Input {
     pub enabled: bool,
     /// Which side of this screen the peer's screen sits on.
     pub peer_side: Side,
-    /// Send Command as Ctrl (and Control as Super), so Cmd+C copies on Linux.
-    pub swap_cmd_ctrl: bool,
+    pub keyboard: KeyboardStyle,
     /// Pointer speed on the peer (1.0 = one Mac point per peer pixel).
     pub speed: f64,
 }
 
 impl Default for Input {
     fn default() -> Self {
-        Self { enabled: true, peer_side: Side::Left, swap_cmd_ctrl: true, speed: 1.0 }
+        Self { enabled: true, peer_side: Side::Left, keyboard: KeyboardStyle::Mac, speed: 1.0 }
     }
 }
 
@@ -55,6 +65,19 @@ pub struct Files {
     /// SSH host of the peer (as used with `ssh`), so pasted files can be
     /// copied with scp. Only the machine that can SSH to the other needs it.
     pub ssh_host: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Audio {
+    /// Mac: play the Linux machine's audio. Linux: offer the "Mac (RustFlow)" output.
+    pub enabled: bool,
+}
+
+impl Default for Audio {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +99,7 @@ pub struct Config {
     pub unlock_on_enter: bool,
     pub input: Input,
     pub files: Files,
+    pub audio: Audio,
 }
 
 impl Default for Config {
@@ -90,8 +114,25 @@ impl Default for Config {
             unlock_on_enter: false,
             input: Input::default(),
             files: Files::default(),
+            audio: Audio::default(),
         }
     }
+}
+
+/// `text` (a config file) with `[input] keyboard` set to `style`.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+fn with_keyboard_style(text: &str, style: KeyboardStyle) -> Result<String> {
+    let mut doc: toml_edit::DocumentMut = text.parse()?;
+    let value = match style {
+        KeyboardStyle::Mac => "mac",
+        KeyboardStyle::Linux => "linux",
+    };
+    doc["input"]["keyboard"] = toml_edit::value(value);
+    if let Some(input) = doc["input"].as_table_mut() {
+        // Replaced by `keyboard`.
+        input.remove("swap_cmd_ctrl");
+    }
+    Ok(doc.to_string())
 }
 
 impl Config {
@@ -108,6 +149,18 @@ impl Config {
         }
     }
 
+    /// Remember the keyboard style chosen in the menu, keeping the file's comments.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    pub fn save_keyboard_style(style: KeyboardStyle) -> Result<()> {
+        let path = Self::path();
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let updated = with_keyboard_style(&text, style).with_context(|| format!("invalid {}", path.display()))?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(&path, updated).with_context(|| format!("cannot write {}", path.display()))
+    }
+
     /// Peer address with the default port filled in.
     pub fn peer_addr(&self) -> Option<String> {
         self.peer.as_ref().map(|p| {
@@ -120,5 +173,28 @@ impl Config {
             .clone()
             .or_else(|| self.peer.clone())
             .unwrap_or_else(|| "peer".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saving_keyboard_style_keeps_comments() {
+        let text = "# my mac\nrole = \"connect\"\n\n[input]\n# side\npeer_side = \"left\"\nswap_cmd_ctrl = true\n";
+        let out = with_keyboard_style(text, KeyboardStyle::Linux).unwrap();
+        assert!(out.contains("# my mac") && out.contains("# side"));
+        assert!(out.contains("keyboard = \"linux\"") && !out.contains("swap_cmd_ctrl"));
+        let cfg: Config = toml::from_str(&out).unwrap();
+        assert_eq!(cfg.input.keyboard, KeyboardStyle::Linux);
+        assert_eq!(cfg.input.peer_side, Side::Left);
+    }
+
+    #[test]
+    fn keyboard_style_is_added_when_missing() {
+        let out = with_keyboard_style("role = \"connect\"\n", KeyboardStyle::Mac).unwrap();
+        let cfg: Config = toml::from_str(&out).unwrap();
+        assert_eq!(cfg.input.keyboard, KeyboardStyle::Mac);
     }
 }

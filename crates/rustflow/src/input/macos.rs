@@ -26,7 +26,8 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use super::keymap;
-use crate::config::{self, Side};
+use super::shortcuts::Translator;
+use crate::config::{self, KeyboardStyle, Side};
 use crate::status::Shared;
 
 const CONTROL: u64 = 0x0004_0000;
@@ -46,7 +47,6 @@ pub struct State {
     inner: Mutex<Inner>,
 }
 
-#[derive(Default)]
 struct Inner {
     /// Peer screen size in pixels; None until it says it can take input.
     peer_screen: Option<(f64, f64)>,
@@ -54,6 +54,21 @@ struct Inner {
     remote: Option<Remote>,
     /// Modifier keys (mac key codes) currently held down while remote.
     held_mods: HashSet<u16>,
+    /// Mac keys → Linux keys, in the chosen keyboard style.
+    keys: Translator,
+}
+
+impl Inner {
+    fn new(style: KeyboardStyle) -> Self {
+        Self { peer_screen: None, remote: None, held_mods: HashSet::new(), keys: Translator::new(style) }
+    }
+
+    /// Forget held keys (the peer releases everything on enter/leave).
+    fn reset_keys(&mut self) {
+        self.held_mods.clear();
+        let style = self.keys.style();
+        self.keys.reset(style);
+    }
 }
 
 struct Remote {
@@ -73,7 +88,7 @@ pub fn start(cfg: &config::Config, shared: &Shared) -> Arc<State> {
         tx,
         rx: tokio::sync::Mutex::new(rx),
         shared: shared.clone(),
-        inner: Mutex::default(),
+        inner: Mutex::new(Inner::new(cfg.input.keyboard)),
     });
     let thread_state = state.clone();
     std::thread::Builder::new()
@@ -119,6 +134,23 @@ impl State {
         }
         let ready = self.inner.lock().unwrap().peer_screen.is_some();
         self.update_line(false, ready);
+    }
+
+    pub fn set_keyboard_style(&self, style: KeyboardStyle) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.remote.is_some() {
+            // Release anything held under the old style.
+            self.send(Message::Leave);
+        }
+        inner.held_mods.clear();
+        inner.keys.reset(style);
+        info!(?style, "keyboard style changed");
+    }
+
+    fn send_keys(&self, keys: super::shortcuts::Out) {
+        for (code, pressed) in keys {
+            self.send(Message::Key { code, pressed });
+        }
     }
 
     fn send(&self, msg: Message) {
@@ -178,10 +210,10 @@ impl State {
                     self.send(Message::PointerTo { x, y });
                 }
             }
-            CGEventType::LeftMouseDown => self.button(MouseButton::Left, true),
-            CGEventType::LeftMouseUp => self.button(MouseButton::Left, false),
-            CGEventType::RightMouseDown => self.button(MouseButton::Right, true),
-            CGEventType::RightMouseUp => self.button(MouseButton::Right, false),
+            CGEventType::LeftMouseDown => self.button(&mut inner, MouseButton::Left, true),
+            CGEventType::LeftMouseUp => self.button(&mut inner, MouseButton::Left, false),
+            CGEventType::RightMouseDown => self.button(&mut inner, MouseButton::Right, true),
+            CGEventType::RightMouseUp => self.button(&mut inner, MouseButton::Right, false),
             CGEventType::OtherMouseDown | CGEventType::OtherMouseUp => {
                 let button = match field(event, EventField::MOUSE_EVENT_BUTTON_NUMBER) {
                     2 => MouseButton::Middle,
@@ -189,7 +221,7 @@ impl State {
                     4 => MouseButton::Forward,
                     _ => return CallbackResult::Drop,
                 };
-                self.button(button, matches!(etype, CGEventType::OtherMouseDown));
+                self.button(&mut inner, button, matches!(etype, CGEventType::OtherMouseDown));
             }
             CGEventType::ScrollWheel => {
                 let continuous = field(event, EventField::SCROLL_WHEEL_EVENT_IS_CONTINUOUS) != 0;
@@ -213,9 +245,8 @@ impl State {
                     return CallbackResult::Drop;
                 }
                 let mac = field(event, EventField::KEYBOARD_EVENT_KEYCODE) as u16;
-                if let Some(code) = keymap::to_linux(mac, self.cfg.swap_cmd_ctrl) {
-                    self.send(Message::Key { code, pressed: matches!(etype, CGEventType::KeyDown) });
-                }
+                let keys = inner.keys.key(mac, matches!(etype, CGEventType::KeyDown));
+                self.send_keys(keys);
             }
             CGEventType::FlagsChanged => {
                 let flags = event.get_flags().bits();
@@ -232,13 +263,16 @@ impl State {
         CallbackResult::Drop
     }
 
-    fn button(&self, button: MouseButton, pressed: bool) {
+    fn button(&self, inner: &mut Inner, button: MouseButton, pressed: bool) {
+        if pressed {
+            let keys = inner.keys.click();
+            self.send_keys(keys);
+        }
         self.send(Message::Button { button, pressed });
     }
 
     fn modifier(&self, inner: &mut Inner, mac: u16, flags: u64) {
-        let (Some(code), Some(bit)) = (keymap::to_linux(mac, self.cfg.swap_cmd_ctrl), keymap::modifier_flag(mac))
-        else {
+        let (Some(code), Some(bit)) = (keymap::to_linux(mac), keymap::modifier_flag(mac)) else {
             return;
         };
         if mac == CAPS_LOCK_KEY {
@@ -254,7 +288,8 @@ impl State {
         } else {
             inner.held_mods.remove(&mac);
         }
-        self.send(Message::Key { code, pressed });
+        let keys = inner.keys.modifier(mac, pressed);
+        self.send_keys(keys);
     }
 
     /// Move the pointer to the peer if it was pushed past our edge.
@@ -276,7 +311,7 @@ impl State {
         };
         let y = frac * (height - 1.0);
         inner.remote = Some(Remote { x, y, width, height });
-        inner.held_mods.clear();
+        inner.reset_keys();
         self.send(Message::Enter { x: x / width, y: y / height });
         let _ = CGDisplay::associate_mouse_and_mouse_cursor_position(false);
         let _ = CGDisplay::main().hide_cursor();
@@ -288,7 +323,7 @@ impl State {
     /// Bring the pointer back to the Mac. `frac` is the height to return at.
     fn come_back(&self, inner: &mut Inner, frac: Option<f64>) {
         inner.remote = None;
-        inner.held_mods.clear();
+        inner.reset_keys();
         self.send(Message::Leave);
         if let Some(edge) = edge_display(self.cfg.peer_side) {
             let frac = frac.unwrap_or(0.5);

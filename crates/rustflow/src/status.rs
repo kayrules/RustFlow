@@ -25,6 +25,8 @@ pub struct Status {
     pub sync_enabled: bool,
     /// Mouse & keyboard sharing state, ready to show.
     pub input: String,
+    /// Audio forwarding state, ready to show.
+    pub audio: String,
 }
 
 /// What the tray shows, reduced to one state.
@@ -88,6 +90,7 @@ impl Default for Shared {
         let status = Status {
             sync_enabled: true,
             input: "Mouse & keyboard: starting…".into(),
+            audio: "Audio: starting…".into(),
             ..Default::default()
         };
         Self {
@@ -120,6 +123,10 @@ impl Shared {
         if self.connections.fetch_sub(1, Ordering::Relaxed) == 1 {
             self.set_peer(None);
         }
+    }
+
+    pub fn set_audio(&self, line: String) {
+        self.status.send_if_modified(|s| replace(&mut s.audio, line));
     }
 
     pub fn set_input(&self, line: String) {

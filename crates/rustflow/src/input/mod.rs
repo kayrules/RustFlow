@@ -17,6 +17,8 @@ mod keymap;
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "macos")]
+mod shortcuts;
 
 #[cfg(target_os = "linux")]
 use linux as platform;
@@ -52,6 +54,12 @@ impl Input {
     /// machines that only receive input.
     pub async fn next_outgoing(&self) -> Option<Message> {
         self.0.next_outgoing().await
+    }
+
+    /// Switch between Mac-style and Linux-style keys (capturing side only).
+    #[cfg(target_os = "macos")]
+    pub fn set_keyboard_style(&self, style: crate::config::KeyboardStyle) {
+        self.0.set_keyboard_style(style)
     }
 
     /// Turn capture on or off (only the capturing side has a toggle).

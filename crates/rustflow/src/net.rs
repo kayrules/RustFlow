@@ -16,7 +16,7 @@ use crate::clip::{Clip, ClipEvent};
 use crate::input::{self, Input};
 use crate::status::Shared;
 
-type Conn = Framed<TcpStream, LengthDelimitedCodec>;
+pub type Conn = Framed<TcpStream, LengthDelimitedCodec>;
 
 /// Everything a connection relays: clipboard and input.
 #[derive(Clone)]
@@ -25,12 +25,12 @@ pub struct Link {
     pub input: Input,
 }
 
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const PING_EVERY: Duration = Duration::from_secs(10);
 /// No frame for this long means the peer is gone (e.g. it went to sleep).
 const PEER_TIMEOUT: Duration = Duration::from_secs(30);
 
-fn frame(stream: TcpStream) -> Conn {
+pub fn frame(stream: TcpStream) -> Conn {
     let _ = stream.set_nodelay(true);
     let codec = LengthDelimitedCodec::builder()
         .max_frame_length(MAX_FRAME_LEN)
@@ -38,17 +38,17 @@ fn frame(stream: TcpStream) -> Conn {
     Framed::new(stream, codec)
 }
 
-async fn send(conn: &mut Conn, msg: &Message) -> Result<()> {
+pub async fn send(conn: &mut Conn, msg: &Message) -> Result<()> {
     conn.send(Bytes::from(msg.encode())).await?;
     Ok(())
 }
 
-async fn recv(conn: &mut Conn) -> Result<Message> {
+pub async fn recv(conn: &mut Conn) -> Result<Message> {
     let bytes = conn.next().await.context("connection closed")??;
     Ok(Message::decode(&bytes)?)
 }
 
-fn hostname() -> String {
+pub fn hostname() -> String {
     gethostname::gethostname().to_string_lossy().into_owned()
 }
 

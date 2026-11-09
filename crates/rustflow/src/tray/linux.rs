@@ -13,6 +13,8 @@ struct Tray {
     status: Status,
     shared: Shared,
     cfg: Config,
+    /// "Mac (RustFlow)" is the default output.
+    routing_audio: bool,
 }
 
 impl ksni::Tray for Tray {
@@ -63,6 +65,12 @@ impl ksni::Tray for Tray {
                 ..Default::default()
             }
             .into(),
+            StandardItem {
+                label: self.status.audio.clone(),
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
             MenuItem::Separator,
             CheckmarkItem {
                 label: "Sync clipboard".into(),
@@ -76,6 +84,25 @@ impl ksni::Tray for Tray {
             }
             .into(),
         ];
+        if self.cfg.audio.enabled {
+            items.push(
+                CheckmarkItem {
+                    label: format!("Send audio to {}", self.cfg.peer_label()),
+                    checked: self.routing_audio,
+                    activate: Box::new(|t: &mut Self| {
+                        let on = !t.routing_audio;
+                        t.routing_audio = on;
+                        tokio::spawn(async move {
+                            if let Err(e) = crate::audio::route_to_mac(on).await {
+                                error!("cannot switch audio output: {e:#}");
+                            }
+                        });
+                    }),
+                    ..Default::default()
+                }
+                .into(),
+            );
+        }
         items.push(
             StandardItem {
                 label: format!("Wake {}", self.cfg.peer_label()),
@@ -122,7 +149,12 @@ pub fn run(cfg: Config, token: Result<String>) -> Result<()> {
     tokio::runtime::Runtime::new()?.block_on(async move {
         let shared = Shared::default();
         let input = crate::input::Input::start(&cfg, &shared);
-        let tray = Tray { status: shared.subscribe().borrow().clone(), shared: shared.clone(), cfg: cfg.clone() };
+        let tray = Tray {
+            status: shared.subscribe().borrow().clone(),
+            shared: shared.clone(),
+            cfg: cfg.clone(),
+            routing_audio: false,
+        };
         // Wait for a tray host instead of failing if the AppIndicator extension is off.
         match tray.assume_sni_available(true).spawn().await {
             Ok(handle) => {
@@ -140,7 +172,10 @@ pub fn run(cfg: Config, token: Result<String>) -> Result<()> {
         }
 
         match token {
-            Ok(token) => crate::core::run(cfg, token, shared, input).await,
+            Ok(token) => {
+                let audio = crate::audio::Audio::new(cfg.audio.enabled);
+                crate::core::run(cfg, token, shared, input, audio).await
+            }
             Err(e) => {
                 error!("{e:#}");
                 shared.set_clipboard(ClipState::Error(format!("{e:#}")));

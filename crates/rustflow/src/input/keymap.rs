@@ -1,8 +1,8 @@
 //! macOS virtual key codes (kVK_*) → Linux evdev key codes (KEY_*).
 
-/// Map a macOS key code. `swap_cmd_ctrl` sends Command as Ctrl and
-/// Control as Super, so Mac shortcuts (Cmd+C, Cmd+V…) work on Linux.
-pub fn to_linux(mac: u16, swap_cmd_ctrl: bool) -> Option<u16> {
+/// Map a macOS key code to the Linux key in the same position on a PC
+/// keyboard (Command = Super). Shortcut translation is in `shortcuts`.
+pub fn to_linux(mac: u16) -> Option<u16> {
     let code = match mac {
         0x00 => 30,  // A
         0x01 => 31,  // S
@@ -57,15 +57,15 @@ pub fn to_linux(mac: u16, swap_cmd_ctrl: bool) -> Option<u16> {
         0x32 => 41,  // `
         0x33 => 14,  // Delete → Backspace
         0x35 => 1,   // Escape
-        0x36 => if swap_cmd_ctrl { 97 } else { 126 },  // Right Command
-        0x37 => if swap_cmd_ctrl { 29 } else { 125 },  // Command
+        0x36 => 126, // Right Command → Right Super
+        0x37 => 125, // Command → Super
         0x38 => 42,  // Shift
         0x39 => 58,  // Caps Lock
         0x3A => 56,  // Option → Alt
-        0x3B => if swap_cmd_ctrl { 125 } else { 29 },  // Control
+        0x3B => 29,  // Control
         0x3C => 54,  // Right Shift
         0x3D => 100, // Right Option → AltGr
-        0x3E => if swap_cmd_ctrl { 126 } else { 97 },  // Right Control
+        0x3E => 97,  // Right Control
         0x40 => 187, // F17
         0x41 => 83,  // Keypad .
         0x43 => 55,  // Keypad *
@@ -144,11 +144,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn letters_and_swap() {
-        assert_eq!(to_linux(0x00, true), Some(30)); // A
-        assert_eq!(to_linux(0x37, true), Some(29)); // Cmd → Ctrl
-        assert_eq!(to_linux(0x37, false), Some(125)); // Cmd → Super
-        assert_eq!(to_linux(0x3B, true), Some(125)); // Control → Super
-        assert_eq!(to_linux(0x3F, true), None); // Fn has no Linux key
+    fn maps_by_position() {
+        assert_eq!(to_linux(0x00), Some(30)); // A
+        assert_eq!(to_linux(0x37), Some(125)); // Command → Super
+        assert_eq!(to_linux(0x3B), Some(29)); // Control → Ctrl
+        assert_eq!(to_linux(0x3F), None); // Fn has no Linux key
     }
 }

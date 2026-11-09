@@ -19,7 +19,15 @@ type into the Linux lock screen.
   - Input on Linux goes through `/dev/uinput`, so Linux sees a real keyboard
     and mouse. It works everywhere, **including the lock screen**, and moving
     the pointer over wakes a blanked screen.
-  - `Cmd+C` / `Cmd+V` become `Ctrl+C` / `Ctrl+V` on Linux (configurable).
+  - Two keyboard styles, switchable from the menu bar:
+    - **Mac style** (default): Mac shortcuts do on Linux what they do on a
+      Mac — `⌘C`/`⌘V` copy and paste, `⌘Tab` switches apps, `⌘Space` opens
+      search, `⌘←`/`⌘→` jump to line start/end, `⌥←`/`⌥→` move by word,
+      `⌘`-click is Ctrl-click, `⌘⇧3` takes a full-screen screenshot and
+      `⌘⇧4`/`⌘⇧5` open GNOME's screenshot tool. Control stays Control (so `Ctrl+C` still stops
+      a program in the terminal).
+    - **Linux style**: keys map by position like a PC keyboard (`⌘` = Super,
+      `⌥` = Alt); use Linux shortcuts as usual.
   - `Ctrl+Option+Cmd` brings the pointer back to the Mac at any time.
 - **Clipboard sync (both ways, text).** Copy on one machine, paste on the
   other. On GNOME Wayland this uses the official Clipboard portal, so it works
@@ -29,6 +37,12 @@ type into the Linux lock screen.
   untested). Only names and paths cross when you copy; the content is copied
   with `scp` when you actually paste, so copying and pasting on the same
   machine costs nothing. A progress window appears for slow transfers.
+- **Linux audio on the Mac.** Linux gets an output device called
+  **Mac (RustFlow)**; whatever plays there (YouTube, music, calls) comes out
+  of the Mac's current output, e.g. headphones plugged into the Mac. Pick it
+  in Linux's sound settings or tick *Send audio to Mac* in the Linux tray
+  menu. Latency is about 40–60 ms on a LAN, so video stays in sync; the Mac
+  follows you when you switch outputs (plug or unplug headphones).
 - **Wake.** The menu item *Wake &lt;peer&gt;* sends a Wake-on-LAN packet and,
   once connected, turns the Linux screen on and (optionally) unlocks it.
 - **Optional unlock on enter.** Linux can unlock itself when the Mac pointer
@@ -61,7 +75,13 @@ type into the Linux lock screen.
   transfers use SSH and are encrypted.
 - **One monitor per side assumed.** Several Linux monitors are treated as one
   wide screen; on the Mac, the leftmost/rightmost display is the edge.
+- **Mac-style keys don't know which app has focus on Linux.** In a Linux
+  terminal `⌘C` arrives as `Ctrl+C` (stop the program), not copy; use
+  `⌘⇧C` / `⌘⇧V` there, as Linux terminals expect.
 - Media keys (volume, brightness) are not forwarded.
+- **Audio is one way (Linux → Mac), uncompressed** (about 1.5 Mbit/s while
+  something plays; silence isn't sent). Fine on a LAN, heavy over a slow VPN.
+  The Mac's volume and mute apply to it.
 - Wake-on-LAN needs a wired network card on the Linux PC with WoL enabled in
   the BIOS and the OS.
 
@@ -78,11 +98,13 @@ type into the Linux lock screen.
 - Rust (same command as above)
 - For the tray icon: the AppIndicator extension
   (`gnome-extensions enable ubuntu-appindicators@ubuntu.com` on Ubuntu)
+- PipeWire with its command line tools (`pw-cli`, `pw-record`, `wpctl`),
+  standard on Ubuntu 22.10 and later, for playing Linux audio on the Mac
 - Optional: `zenity` for the paste progress window
 
 **Network**
-- Both machines on the same network (or a VPN), TCP port **24801** reachable
-  on the Linux machine.
+- Both machines on the same network (or a VPN), TCP ports **24801**
+  (control) and **24802** (audio) reachable on the Linux machine.
 - For file paste: `ssh <linux-host>` from the Mac must work without a
   password (SSH key), and `scp` must be available on both machines.
 
@@ -155,11 +177,12 @@ arguments.
 | `allow_remote_unlock` | Linux | Let the Mac's *Wake* item unlock this screen |
 | `unlock_on_enter` | Linux | Unlock when the Mac pointer arrives |
 | `[input] peer_side` | Mac | `"left"` or `"right"` of the Mac screen |
-| `[input] swap_cmd_ctrl` | Mac | Send Cmd as Ctrl and Control as Super (default `true`) |
+| `[input] keyboard` | Mac | `"mac"` (Mac shortcuts translated, default) or `"linux"` (PC layout) |
 | `[input] speed` | Mac | Pointer speed on Linux (default `1.0`) |
 | `[input] enabled` | Mac | Share keyboard and mouse (default `true`) |
 | `[files] ssh_host` | Mac | SSH host of Linux for file paste; empty turns it off |
 | `[wol] mac`, `[wol] broadcast` | Mac | Wake-on-LAN target and LAN broadcast address |
+| `[audio] enabled` | both | Linux: offer the *Mac (RustFlow)* output. Mac: play it (default `true`) |
 
 Restart RustFlow after editing (menu › Quit, then open it again).
 
@@ -231,6 +254,7 @@ paste, `net.rs` transport, `tray/` menu bar and tray UIs).
 - [ ] Transfer progress for file paste (bytes, not just a spinner)
 - [ ] File paste without SSH (transfer over the RustFlow connection)
 - [ ] Other Linux desktops (KDE Plasma, X11)
+- [ ] Compress audio (Opus) for slow links; Mac → Linux audio and microphone
 - [ ] App icon
 
 ## License

@@ -22,6 +22,9 @@ command -v cargo >/dev/null || die "Rust is not installed. Install it with:
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
 command -v cc >/dev/null || die "a C compiler is missing. On Ubuntu: sudo apt install build-essential"
 [ "${XDG_SESSION_TYPE:-}" = wayland ] || warn "this session is not Wayland; clipboard sync needs GNOME on Wayland"
+for tool in pw-cli pw-record wpctl; do
+  command -v "$tool" >/dev/null || warn "$tool not found; playing Linux audio on the Mac needs PipeWire's tools"
+done
 command -v zenity >/dev/null || warn "zenity not found; no progress window for large file pastes (sudo apt install zenity)"
 if command -v gnome-extensions >/dev/null; then
   if ! gnome-extensions list --enabled 2>/dev/null | grep -q appindicator; then

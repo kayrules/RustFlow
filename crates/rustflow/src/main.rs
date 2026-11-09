@@ -1,3 +1,4 @@
+mod audio;
 mod clip;
 mod config;
 mod core;
@@ -91,7 +92,8 @@ fn main() -> Result<()> {
             let rt = tokio::runtime::Runtime::new()?;
             let shared = Shared::default();
             let input = rt.block_on(async { input::Input::start(&cfg, &shared) });
-            rt.block_on(core::run(cfg, token, shared, input))
+            let audio = audio::Audio::new(cfg.audio.enabled);
+            rt.block_on(core::run(cfg, token, shared, input, audio))
         }
     }
 }

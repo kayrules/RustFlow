@@ -11,8 +11,10 @@ peer_name = "@PEER_NAME@"
 [input]
 # Which side of the Mac screen the Linux screen sits on: "left" or "right".
 peer_side = "@PEER_SIDE@"
-# Cmd+C / Cmd+V become Ctrl+C / Ctrl+V on Linux (Control becomes Super).
-swap_cmd_ctrl = true
+# "mac": Mac shortcuts work as on a Mac (⌘C copies, ⌘Tab switches apps).
+# "linux": keys map like a PC keyboard (⌘ = Super, ⌥ = Alt).
+# Also switchable from the menu bar: Keyboard on Linux.
+keyboard = "mac"
 # Pointer speed on Linux (1.0 = one Mac point per Linux pixel).
 speed = 1.0
 
