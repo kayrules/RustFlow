@@ -26,6 +26,12 @@ for tool in pw-cli pw-record wpctl; do
   command -v "$tool" >/dev/null || warn "$tool not found; playing Linux audio on the Mac needs PipeWire's tools"
 done
 command -v zenity >/dev/null || warn "zenity not found; no progress window for large file pastes (sudo apt install zenity)"
+missing_gst=""
+for element in pipewiresrc videoconvert x264enc matroskamux; do
+  gst-inspect-1.0 "$element" >/dev/null 2>&1 || missing_gst="$missing_gst $element"
+done
+[ -z "$missing_gst" ] || warn "GStreamer is missing:$missing_gst; showing this screen on the Mac needs:
+         sudo apt install gstreamer1.0-tools gstreamer1.0-pipewire gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly"
 if command -v gnome-extensions >/dev/null; then
   if ! gnome-extensions list --enabled 2>/dev/null | grep -q appindicator; then
     warn "no AppIndicator extension is enabled, so the tray icon won't show.

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build rustflow.app (menu bar only, no Dock icon) into /Applications.
+# Build rustflow.app (menu bar app; Dock icon only while the screen window is open) into /Applications.
 set -eu
 cd "$(dirname "$0")/../.."
 cargo build --release

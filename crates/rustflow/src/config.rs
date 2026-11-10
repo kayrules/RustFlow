@@ -80,6 +80,35 @@ impl Default for Audio {
     }
 }
 
+/// Video encoder for the screen window (Linux).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Encoder {
+    /// NVIDIA's hardware encoder when available, otherwise x264.
+    #[default]
+    Auto,
+    /// NVIDIA GPU (nvh264enc, from gstreamer1.0-plugins-bad).
+    Nvenc,
+    /// CPU (x264enc, from gstreamer1.0-plugins-ugly).
+    X264,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Screen {
+    /// Mac: offer "Show <peer> screen" in the menu. Linux: let the Mac view this screen.
+    pub enabled: bool,
+    /// Linux: video bitrate in kbit/s. Higher is sharper but needs more bandwidth.
+    pub bitrate_kbps: u32,
+    pub encoder: Encoder,
+}
+
+impl Default for Screen {
+    fn default() -> Self {
+        Self { enabled: true, bitrate_kbps: 12_000, encoder: Encoder::Auto }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -100,6 +129,7 @@ pub struct Config {
     pub input: Input,
     pub files: Files,
     pub audio: Audio,
+    pub screen: Screen,
 }
 
 impl Default for Config {
@@ -115,6 +145,7 @@ impl Default for Config {
             input: Input::default(),
             files: Files::default(),
             audio: Audio::default(),
+            screen: Screen::default(),
         }
     }
 }
@@ -133,6 +164,143 @@ fn with_keyboard_style(text: &str, style: KeyboardStyle) -> Result<String> {
         input.remove("swap_cmd_ctrl");
     }
     Ok(doc.to_string())
+}
+
+/// What the Mac's Settings window edits. Empty strings mean "not set".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+pub struct MacSettings {
+    pub peer: String,
+    pub peer_name: String,
+    pub input_enabled: bool,
+    pub peer_side: Side,
+    pub keyboard: KeyboardStyle,
+    pub speed: f64,
+    pub ssh_host: String,
+    pub audio_enabled: bool,
+    pub screen_enabled: bool,
+    pub wol_mac: String,
+    pub wol_broadcast: String,
+}
+
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+impl MacSettings {
+    pub fn from_config(c: &Config) -> Self {
+        Self {
+            peer: c.peer.clone().unwrap_or_default(),
+            peer_name: c.peer_name.clone().unwrap_or_default(),
+            input_enabled: c.input.enabled,
+            peer_side: c.input.peer_side,
+            keyboard: c.input.keyboard,
+            speed: c.input.speed,
+            ssh_host: c.files.ssh_host.clone().unwrap_or_default(),
+            audio_enabled: c.audio.enabled,
+            screen_enabled: c.screen.enabled,
+            wol_mac: c.wol.as_ref().map(|w| w.mac.clone()).unwrap_or_default(),
+            wol_broadcast: c.wol.as_ref().map(|w| w.broadcast.clone()).unwrap_or_default(),
+        }
+    }
+
+    /// Trimmed copy, or the field that is wrong and why.
+    pub fn validated(&self) -> Result<Self, (&'static str, String)> {
+        let mut s = self.clone();
+        for f in [&mut s.peer, &mut s.peer_name, &mut s.ssh_host, &mut s.wol_mac, &mut s.wol_broadcast] {
+            *f = f.trim().to_owned();
+        }
+        if s.peer.is_empty() {
+            return Err(("peer", "Enter the Linux PC's address.".into()));
+        }
+        if s.peer.contains(char::is_whitespace) {
+            return Err(("peer", "The Linux address can't contain spaces.".into()));
+        }
+        if let Some((_, port)) = s.peer.rsplit_once(':') {
+            if port.parse::<u16>().is_err() {
+                return Err(("peer", format!("\"{port}\" is not a valid port.")));
+            }
+        }
+        if !(0.1..=10.0).contains(&s.speed) {
+            return Err(("speed", "Pointer speed must be between 0.1 and 10.".into()));
+        }
+        if s.ssh_host.contains(char::is_whitespace) {
+            return Err(("ssh_host", "The SSH host can't contain spaces.".into()));
+        }
+        match (s.wol_mac.is_empty(), s.wol_broadcast.is_empty()) {
+            (true, true) => {}
+            (false, true) => return Err(("wol_broadcast", "Wake-on-LAN also needs the broadcast address.".into())),
+            (true, false) => return Err(("wol_mac", "Wake-on-LAN also needs the MAC address.".into())),
+            (false, false) => {
+                let parts: Vec<&str> = s.wol_mac.split([':', '-']).collect();
+                if parts.len() != 6 || parts.iter().any(|p| p.len() != 2 || u8::from_str_radix(p, 16).is_err()) {
+                    return Err(("wol_mac", "The MAC address should look like a8:a1:59:2d:35:9d.".into()));
+                }
+                if s.wol_broadcast.parse::<std::net::Ipv4Addr>().is_err() {
+                    return Err(("wol_broadcast", "The broadcast address should look like 192.168.1.255.".into()));
+                }
+            }
+        }
+        Ok(s)
+    }
+
+    /// `text` (a config file) with the fields that differ from `old` set to
+    /// these values. Comments and other settings are kept.
+    pub fn apply_to(&self, old: &Self, text: &str) -> Result<String> {
+        let mut doc: toml_edit::DocumentMut = text.parse()?;
+        let text_or_remove = |doc: &mut toml_edit::DocumentMut, table: Option<&str>, key: &str, v: &str| {
+            let t = match table {
+                Some(name) => doc[name].as_table_like_mut(),
+                None => Some(doc.as_table_mut() as &mut dyn toml_edit::TableLike),
+            };
+            if v.is_empty() {
+                if let Some(t) = t {
+                    t.remove(key);
+                }
+            } else {
+                match table {
+                    Some(name) => doc[name][key] = toml_edit::value(v),
+                    None => doc[key] = toml_edit::value(v),
+                }
+            }
+        };
+        if self.peer != old.peer {
+            text_or_remove(&mut doc, None, "peer", &self.peer);
+        }
+        if self.peer_name != old.peer_name {
+            text_or_remove(&mut doc, None, "peer_name", &self.peer_name);
+        }
+        if self.input_enabled != old.input_enabled {
+            doc["input"]["enabled"] = toml_edit::value(self.input_enabled);
+        }
+        if self.peer_side != old.peer_side {
+            doc["input"]["peer_side"] = toml_edit::value(match self.peer_side {
+                Side::Left => "left",
+                Side::Right => "right",
+            });
+        }
+        if self.keyboard != old.keyboard {
+            doc = with_keyboard_style(&doc.to_string(), self.keyboard)?.parse()?;
+        }
+        if self.speed != old.speed {
+            doc["input"]["speed"] = toml_edit::value((self.speed * 100.0).round() / 100.0);
+        }
+        if self.ssh_host != old.ssh_host {
+            text_or_remove(&mut doc, Some("files"), "ssh_host", &self.ssh_host);
+        }
+        if self.audio_enabled != old.audio_enabled {
+            doc["audio"]["enabled"] = toml_edit::value(self.audio_enabled);
+        }
+        if self.screen_enabled != old.screen_enabled {
+            doc["screen"]["enabled"] = toml_edit::value(self.screen_enabled);
+        }
+        if (&self.wol_mac, &self.wol_broadcast) != (&old.wol_mac, &old.wol_broadcast) {
+            if self.wol_mac.is_empty() {
+                doc.remove("wol");
+            } else {
+                doc["wol"]["mac"] = toml_edit::value(&self.wol_mac);
+                doc["wol"]["broadcast"] = toml_edit::value(&self.wol_broadcast);
+            }
+        }
+        Ok(doc.to_string())
+    }
 }
 
 impl Config {
@@ -155,6 +323,19 @@ impl Config {
         let path = Self::path();
         let text = std::fs::read_to_string(&path).unwrap_or_default();
         let updated = with_keyboard_style(&text, style).with_context(|| format!("invalid {}", path.display()))?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(&path, updated).with_context(|| format!("cannot write {}", path.display()))
+    }
+
+    /// Save what the Settings window changed, keeping the file's comments.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    pub fn save_mac_settings(old: &MacSettings, new: &MacSettings) -> Result<()> {
+        let path = Self::path();
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let updated = new.apply_to(old, &text).with_context(|| format!("invalid {}", path.display()))?;
+        toml::from_str::<Config>(&updated).context("the new settings don't form a valid config")?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
@@ -189,6 +370,41 @@ mod tests {
         let cfg: Config = toml::from_str(&out).unwrap();
         assert_eq!(cfg.input.keyboard, KeyboardStyle::Linux);
         assert_eq!(cfg.input.peer_side, Side::Left);
+    }
+
+    #[test]
+    fn settings_change_only_what_changed() {
+        let text = "# my mac\nrole = \"connect\"\npeer = \"10.0.0.2\" # wired\npeer_name = \"Box\"\n\n\
+                    [input]\n# side\npeer_side = \"left\"\n\n[wol]\nmac = \"aa:bb:cc:dd:ee:ff\"\nbroadcast = \"10.0.0.255\"\n";
+        let cfg: Config = toml::from_str(text).unwrap();
+        let old = MacSettings::from_config(&cfg);
+        let mut new = old.clone();
+        new.peer_side = Side::Right;
+        new.speed = 1.5;
+        new.ssh_host = "box".into();
+        new.peer_name = String::new();
+        new.wol_mac = String::new();
+        new.wol_broadcast = String::new();
+        let out = new.validated().unwrap().apply_to(&old, text).unwrap();
+        assert!(out.contains("# my mac") && out.contains("# side") && out.contains("peer = \"10.0.0.2\" # wired"));
+        let saved: Config = toml::from_str(&out).unwrap();
+        assert_eq!(MacSettings::from_config(&saved), new);
+        assert!(!out.contains("peer_name") && !out.contains("[wol]"));
+    }
+
+    #[test]
+    fn settings_are_checked() {
+        let mut s = MacSettings::from_config(&Config::default());
+        assert!(s.validated().is_err()); // no address
+        s.peer = " 192.168.1.20 ".into();
+        assert_eq!(s.validated().unwrap().peer, "192.168.1.20");
+        s.wol_mac = "aa:bb".into();
+        assert!(s.validated().is_err());
+        s.wol_broadcast = "192.168.1.255".into();
+        s.wol_mac = "aa:bb:cc:dd:ee:ff".into();
+        assert!(s.validated().is_ok());
+        s.peer = "host:99999".into();
+        assert!(s.validated().is_err());
     }
 
     #[test]

@@ -7,8 +7,11 @@ mod icon;
 mod input;
 mod net;
 mod screen;
+#[cfg(target_os = "macos")]
+mod settings;
 mod status;
 mod tray;
+mod view;
 mod wol;
 
 use std::path::PathBuf;
@@ -93,7 +96,7 @@ fn main() -> Result<()> {
             let shared = Shared::default();
             let input = rt.block_on(async { input::Input::start(&cfg, &shared) });
             let audio = audio::Audio::new(cfg.audio.enabled);
-            rt.block_on(core::run(cfg, token, shared, input, audio))
+            rt.block_on(core::run(cfg, token, shared, input, audio, view::View::new(|_| {})))
         }
     }
 }

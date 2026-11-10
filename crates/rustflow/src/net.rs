@@ -48,6 +48,39 @@ pub async fn recv(conn: &mut Conn) -> Result<Message> {
     Ok(Message::decode(&bytes)?)
 }
 
+/// Address of a side channel (audio, screen): same host, main port + `offset`.
+pub fn side_addr(addr: &str, offset: u16) -> Result<String> {
+    let (host, port) = addr.rsplit_once(':').context("address has no port")?;
+    let port: u16 = port.parse().context("bad port")?;
+    Ok(format!("{host}:{}", port.checked_add(offset).context("port too high")?))
+}
+
+/// Connect a side channel, with the same token check as the main link.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+pub async fn side_connect(addr: &str, token: &str) -> Result<Conn> {
+    let stream = timeout(HANDSHAKE_TIMEOUT, TcpStream::connect(addr)).await.context("connect timed out")??;
+    let mut conn = frame(stream);
+    let hello = Message::Hello { version: PROTOCOL_VERSION, host: hostname(), token: token.to_owned() };
+    send(&mut conn, &hello).await?;
+    match timeout(HANDSHAKE_TIMEOUT, recv(&mut conn)).await.context("handshake timed out")?? {
+        Message::Welcome { .. } => Ok(conn),
+        other => bail!("expected welcome, got {other:?}"),
+    }
+}
+
+/// Accept a side channel connection (checks version and token).
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+pub async fn side_accept(stream: TcpStream, token: &str) -> Result<Conn> {
+    let mut conn = frame(stream);
+    let hello = timeout(HANDSHAKE_TIMEOUT, recv(&mut conn)).await.context("handshake timed out")??;
+    let Message::Hello { version, token: theirs, .. } = hello else { bail!("expected hello") };
+    if version != PROTOCOL_VERSION || theirs != token {
+        bail!("rejected client (wrong version or token)");
+    }
+    send(&mut conn, &Message::Welcome { host: hostname() }).await?;
+    Ok(conn)
+}
+
 pub fn hostname() -> String {
     gethostname::gethostname().to_string_lossy().into_owned()
 }

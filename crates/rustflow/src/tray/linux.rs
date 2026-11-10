@@ -174,7 +174,8 @@ pub fn run(cfg: Config, token: Result<String>) -> Result<()> {
         match token {
             Ok(token) => {
                 let audio = crate::audio::Audio::new(cfg.audio.enabled);
-                crate::core::run(cfg, token, shared, input, audio).await
+                let view = crate::view::View::new(|_| {});
+                crate::core::run(cfg, token, shared, input, audio, view).await
             }
             Err(e) => {
                 error!("{e:#}");

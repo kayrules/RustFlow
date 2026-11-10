@@ -11,7 +11,7 @@ use tokio::net::TcpListener;
 use tokio::process::{Child, ChildStdin, Command};
 use tracing::{debug, info, warn};
 
-use super::{Audio, CHANNELS, RETRY_AFTER, SAMPLE_RATE, audio_addr, handshake_server};
+use super::{Audio, CHANNELS, RETRY_AFTER, SAMPLE_RATE, audio_addr};
 use crate::config::Config;
 use crate::net::Conn;
 use crate::status::Shared;
@@ -44,7 +44,7 @@ async fn serve(cfg: &Config, token: &str, shared: &Shared) -> Result<()> {
 
     loop {
         let (stream, peer) = listener.accept().await?;
-        let conn = match handshake_server(stream, token).await {
+        let conn = match crate::net::side_accept(stream, token).await {
             Ok(conn) => conn,
             Err(e) => {
                 warn!(%peer, "audio: {e:#}");

@@ -17,13 +17,21 @@ use crate::status::{ClipState, Shared};
 
 const RETRY_AFTER: Duration = Duration::from_secs(10);
 
-pub async fn run(cfg: Config, token: String, mut shared: Shared, input: Input, audio: crate::audio::Audio) -> ! {
+pub async fn run(
+    cfg: Config,
+    token: String,
+    mut shared: Shared,
+    input: Input,
+    audio: crate::audio::Audio,
+    view: crate::view::View,
+) -> ! {
     shared.allow_remote_unlock = cfg.allow_remote_unlock;
     let _ = crate::files::RUNTIME.set(tokio::runtime::Handle::current());
     let broker = crate::files::FileBroker::new(cfg.files.ssh_host.clone().filter(|h| !h.trim().is_empty()));
     let (clip, ports) = clip::channels(broker);
     tokio::spawn(clipboard_loop(ports, shared.clone()));
     tokio::spawn(crate::audio::run(cfg.clone(), token.clone(), shared.clone(), audio));
+    tokio::spawn(crate::view::run(cfg.clone(), token.clone(), shared.clone(), view));
     network_loop(cfg, token, net::Link { clip, input }, shared).await
 }
 

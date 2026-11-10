@@ -43,6 +43,12 @@ type into the Linux lock screen.
   in Linux's sound settings or tick *Send audio to Mac* in the Linux tray
   menu. Latency is about 40–60 ms on a LAN, so video stays in sync; the Mac
   follows you when you switch outputs (plug or unplug headphones).
+- **See the Linux screen on the Mac.** *Show &lt;peer&gt; screen* in the menu
+  opens a window with the Linux screen in it, like a remote desktop. Click,
+  scroll and type in the window to use Linux (keys follow the keyboard
+  style). The video is H.264, encoded on the NVIDIA GPU when there is one
+  (otherwise with x264 on the CPU) and decoded in hardware on the Mac, and streams only while the window is open. The
+  first time, Ubuntu asks which screen to share: click *Share*.
 - **Wake.** The menu item *Wake &lt;peer&gt;* sends a Wake-on-LAN packet and,
   once connected, turns the Linux screen on and (optionally) unlocks it.
 - **Optional unlock on enter.** Linux can unlock itself when the Mac pointer
@@ -82,6 +88,12 @@ type into the Linux lock screen.
 - **Audio is one way (Linux → Mac), uncompressed** (about 1.5 Mbit/s while
   something plays; silence isn't sent). Fine on a LAN, heavy over a slow VPN.
   The Mac's volume and mute apply to it.
+- **The screen window needs Linux unlocked.** GNOME won't start screen
+  sharing on the lock screen; unlock it first (*Wake* can do that).
+  Without an NVIDIA GPU the video takes about one CPU core on Linux
+  (x264); one monitor is shared, and
+  the window shows Linux's picture without its pointer (the Mac pointer
+  is used instead).
 - Wake-on-LAN needs a wired network card on the Linux PC with WoL enabled in
   the BIOS and the OS.
 
@@ -100,11 +112,16 @@ type into the Linux lock screen.
   (`gnome-extensions enable ubuntu-appindicators@ubuntu.com` on Ubuntu)
 - PipeWire with its command line tools (`pw-cli`, `pw-record`, `wpctl`),
   standard on Ubuntu 22.10 and later, for playing Linux audio on the Mac
+- GStreamer, to show the Linux screen on the Mac:
+  `sudo apt install gstreamer1.0-tools gstreamer1.0-pipewire gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly`
+  (most are already on Ubuntu desktop), plus `gstreamer1.0-plugins-bad`
+  to encode on an NVIDIA GPU
 - Optional: `zenity` for the paste progress window
 
 **Network**
 - Both machines on the same network (or a VPN), TCP ports **24801**
-  (control) and **24802** (audio) reachable on the Linux machine.
+  (control), **24802** (audio) and **24803** (screen) reachable on the
+  Linux machine.
 - For file paste: `ssh <linux-host>` from the Mac must work without a
   password (SSH key), and `scp` must be available on both machines.
 
@@ -166,7 +183,9 @@ arguments.
 
 ## Configuration
 
-`~/.config/rustflow/config.toml` on each machine.
+`~/.config/rustflow/config.toml` on each machine. On the Mac, *Settings…*
+in the menu edits it in a window (comments in the file are kept); saving
+restarts RustFlow to apply the changes.
 
 | Key | Where | Meaning |
 |---|---|---|
@@ -183,6 +202,9 @@ arguments.
 | `[files] ssh_host` | Mac | SSH host of Linux for file paste; empty turns it off |
 | `[wol] mac`, `[wol] broadcast` | Mac | Wake-on-LAN target and LAN broadcast address |
 | `[audio] enabled` | both | Linux: offer the *Mac (RustFlow)* output. Mac: play it (default `true`) |
+| `[screen] enabled` | both | Linux: let the Mac view this screen. Mac: show *Show &lt;peer&gt; screen* (default `true`) |
+| `[screen] bitrate_kbps` | Linux | Video bitrate for the screen window (default `12000`) |
+| `[screen] encoder` | Linux | `"auto"` (NVIDIA GPU if available, default), `"nvenc"` or `"x264"` |
 
 Restart RustFlow after editing (menu › Quit, then open it again).
 
@@ -211,6 +233,9 @@ rustflow clip serve|connect   clipboard sync without the tray
 - Anyone who has the token can send keyboard input to the Linux machine and
   read/write both clipboards. Keep `~/.config/rustflow/token` private
   (the installers create it with mode 600).
+- The screen stream is not encrypted either: anyone on the network path
+  can watch it while the window is open. Set `[screen] enabled = false`
+  on Linux to turn it off.
 - `allow_remote_unlock` and `unlock_on_enter` let the Mac unlock Linux. With
   either on, a locked Mac is what protects the Linux PC.
 - The udev rule gives the logged-in desktop user access to `/dev/uinput`,
@@ -254,6 +279,7 @@ paste, `net.rs` transport, `tray/` menu bar and tray UIs).
 - [ ] Transfer progress for file paste (bytes, not just a spinner)
 - [ ] File paste without SSH (transfer over the RustFlow connection)
 - [ ] Other Linux desktops (KDE Plasma, X11)
+- [ ] Screen window: VA-API encoding (Intel/AMD GPUs), several monitors
 - [ ] Compress audio (Opus) for slow links; Mac → Linux audio and microphone
 - [ ] App icon
 

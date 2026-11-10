@@ -9,12 +9,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
-use rustflow_proto::{Message, PROTOCOL_VERSION};
-use tokio::net::TcpStream;
-use tokio::time::timeout;
+use anyhow::Result;
 
-use crate::net::{self, Conn, HANDSHAKE_TIMEOUT};
+use crate::net;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -55,35 +52,7 @@ impl Audio {
 
 /// The audio port is the main port + 1.
 pub fn audio_addr(addr: &str) -> Result<String> {
-    let (host, port) = addr.rsplit_once(':').context("address has no port")?;
-    let port: u16 = port.parse().context("bad port")?;
-    Ok(format!("{host}:{}", port.checked_add(1).context("port too high")?))
-}
-
-/// Client side of the audio handshake (same token check as the main link).
-#[cfg_attr(target_os = "linux", allow(dead_code))]
-async fn handshake_client(addr: &str, token: &str) -> Result<Conn> {
-    let stream = timeout(HANDSHAKE_TIMEOUT, TcpStream::connect(addr)).await.context("connect timed out")??;
-    let mut conn = net::frame(stream);
-    let hello = Message::Hello { version: PROTOCOL_VERSION, host: net::hostname(), token: token.to_owned() };
-    net::send(&mut conn, &hello).await?;
-    match timeout(HANDSHAKE_TIMEOUT, net::recv(&mut conn)).await.context("handshake timed out")?? {
-        Message::Welcome { .. } => Ok(conn),
-        other => bail!("expected welcome, got {other:?}"),
-    }
-}
-
-/// Server side of the audio handshake.
-#[cfg_attr(target_os = "macos", allow(dead_code))]
-async fn handshake_server(stream: TcpStream, token: &str) -> Result<Conn> {
-    let mut conn = net::frame(stream);
-    let hello = timeout(HANDSHAKE_TIMEOUT, net::recv(&mut conn)).await.context("handshake timed out")??;
-    let Message::Hello { version, token: theirs, .. } = hello else { bail!("expected hello") };
-    if version != PROTOCOL_VERSION || theirs != token {
-        bail!("rejected audio client (wrong version or token)");
-    }
-    net::send(&mut conn, &Message::Welcome { host: net::hostname() }).await?;
-    Ok(conn)
+    net::side_addr(addr, 1)
 }
 
 #[cfg(test)]

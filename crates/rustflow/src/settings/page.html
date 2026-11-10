@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RustFlow Settings</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ececec;
+    --group: #ffffff;
+    --line: rgba(0, 0, 0, 0.09);
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --field: #ffffff;
+    --field-line: rgba(0, 0, 0, 0.16);
+    --accent: #007aff;
+    --switch-off: #d4d4d8;
+    --seg-on: #ffffff;
+    --danger-bg: #fdecea;
+    --danger: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e;
+      --group: #2a2a2c;
+      --line: rgba(255, 255, 255, 0.08);
+      --text: #f5f5f7;
+      --muted: #98989d;
+      --field: #1c1c1e;
+      --field-line: rgba(255, 255, 255, 0.14);
+      --accent: #0a84ff;
+      --switch-off: #48484a;
+      --seg-on: #6e6e73;
+      --danger-bg: #3b1d1b;
+      --danger: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    display: flex;
+    flex-direction: column;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+  }
+  main { flex: 1; overflow-y: auto; padding: 18px 20px 8px; }
+  h2 {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    margin: 18px 0 6px 10px;
+  }
+  h2:first-child { margin-top: 0; }
+  .group {
+    background: var(--group);
+    border-radius: 10px;
+    box-shadow: 0 0 0 0.5px var(--line);
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 40px;
+    padding: 7px 12px;
+  }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row > label:first-child, .row > .label { flex: 1; min-width: 0; }
+  .hint { display: block; color: var(--muted); font-size: 11px; margin-top: 1px; }
+  input[type=text] {
+    width: 220px;
+    font: inherit;
+    color: var(--text);
+    background: var(--field);
+    border: 1px solid var(--field-line);
+    border-radius: 6px;
+    padding: 4px 8px;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  input[type=text]:focus { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; border-color: var(--accent); }
+  input[type=text][aria-invalid=true] { border-color: var(--danger); }
+
+  .switch { position: relative; width: 38px; height: 22px; flex: none; }
+  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  .switch span {
+    position: absolute; inset: 0;
+    background: var(--switch-off);
+    border-radius: 11px;
+    transition: background 0.15s;
+    pointer-events: none;
+  }
+  .switch span::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: transform 0.15s;
+  }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(16px); }
+  .switch input:focus-visible + span { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+
+  .segmented {
+    display: inline-flex;
+    background: var(--switch-off);
+    border-radius: 7px;
+    padding: 2px;
+    flex: none;
+  }
+  .segmented label { position: relative; }
+  .segmented input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .segmented span {
+    display: block;
+    padding: 3px 12px;
+    border-radius: 5px;
+    pointer-events: none;
+  }
+  .segmented input:checked + span {
+    background: var(--seg-on);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  }
+  .segmented input:focus-visible + span { outline: 2px solid var(--accent); }
+
+  .slider { display: flex; align-items: center; gap: 10px; flex: none; }
+  input[type=range] { width: 160px; accent-color: var(--accent); }
+  output { width: 40px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+  footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px 16px;
+    border-top: 1px solid var(--line);
+  }
+  footer .note { flex: 1; color: var(--muted); font-size: 11px; }
+  button {
+    font: inherit;
+    border-radius: 6px;
+    padding: 4px 14px;
+    border: 1px solid var(--field-line);
+    background: var(--group);
+    color: var(--text);
+  }
+  button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+  button.link { background: none; border: none; color: var(--accent); padding: 4px 0; }
+  button:disabled { opacity: 0.5; }
+  button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+
+  .error {
+    display: none;
+    margin: 0 20px 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--danger-bg);
+    color: var(--danger);
+  }
+  .error.shown { display: block; }
+</style>
+</head>
+<body>
+<main>
+  <h2>LINUX PC</h2>
+  <div class="group">
+    <div class="row">
+      <label for="peer">Address<span class="hint">IP or host name, optionally with :port</span></label>
+      <input type="text" id="peer" placeholder="192.168.1.20" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="row">
+      <label for="peer_name">Name<span class="hint">Shown in the menu</span></label>
+      <input type="text" id="peer_name" placeholder="Linux" autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+
+  <h2>MOUSE &amp; KEYBOARD</h2>
+  <div class="group">
+    <div class="row">
+      <label for="input_enabled">Share mouse &amp; keyboard</label>
+      <div class="switch"><input type="checkbox" id="input_enabled"><span></span></div>
+    </div>
+    <div class="row">
+      <span class="label" id="side-label">Linux screen is</span>
+      <div class="segmented" role="radiogroup" aria-labelledby="side-label">
+        <label><input type="radio" name="peer_side" value="left"><span>Left of Mac</span></label>
+        <label><input type="radio" name="peer_side" value="right"><span>Right of Mac</span></label>
+      </div>
+    </div>
+    <div class="row">
+      <span class="label" id="kb-label">Keyboard on Linux<span class="hint" id="kb-hint"></span></span>
+      <div class="segmented" role="radiogroup" aria-labelledby="kb-label">
+        <label><input type="radio" name="keyboard" value="mac"><span>Mac style</span></label>
+        <label><input type="radio" name="keyboard" value="linux"><span>Linux style</span></label>
+      </div>
+    </div>
+    <div class="row">
+      <label for="speed">Pointer speed on Linux</label>
+      <div class="slider">
+        <input type="range" id="speed" min="0.25" max="3" step="0.05">
+        <output id="speed-value" for="speed"></output>
+      </div>
+    </div>
+  </div>
+
+  <h2>FILES, AUDIO &amp; SCREEN</h2>
+  <div class="group">
+    <div class="row">
+      <label for="ssh_host">SSH host for file paste<span class="hint">Files are copied with scp. Empty turns file paste off.</span></label>
+      <input type="text" id="ssh_host" placeholder="linux-box" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="row">
+      <label for="audio_enabled">Play Linux audio on this Mac</label>
+      <div class="switch"><input type="checkbox" id="audio_enabled"><span></span></div>
+    </div>
+    <div class="row">
+      <label for="screen_enabled">Show Linux screen in a window<span class="hint">Adds “Show … screen” to the menu</span></label>
+      <div class="switch"><input type="checkbox" id="screen_enabled"><span></span></div>
+    </div>
+  </div>
+
+  <h2>WAKE-ON-LAN</h2>
+  <div class="group">
+    <div class="row">
+      <label for="wol_mac">MAC address<span class="hint">Of the Linux PC's network card. Empty turns Wake-on-LAN off.</span></label>
+      <input type="text" id="wol_mac" placeholder="a8:a1:59:2d:35:9d" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="row">
+      <label for="wol_broadcast">Broadcast address</label>
+      <input type="text" id="wol_broadcast" placeholder="192.168.1.255" autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+</main>
+
+<div class="error" id="error" role="alert"></div>
+
+<footer>
+  <button class="link" id="open-file" type="button">Open config file</button>
+  <span class="note">Saving restarts RustFlow (about 2 s).</span>
+  <button id="cancel" type="button">Cancel</button>
+  <button class="primary" id="save" type="button">Save</button>
+</footer>
+
+<script>
+  const initial = /*SETTINGS*/;
+  const texts = ["peer", "peer_name", "ssh_host", "wol_mac", "wol_broadcast"];
+  const switches = ["input_enabled", "audio_enabled", "screen_enabled"];
+  const $ = (id) => document.getElementById(id);
+  const post = (msg) => window.ipc.postMessage(JSON.stringify(msg));
+
+  const kbHints = {
+    mac: "⌘C copies, ⌘Tab switches apps",
+    linux: "⌘ = Super, ⌥ = Alt (like a PC keyboard)",
+  };
+
+  function load(s) {
+    texts.forEach((k) => ($(k).value = s[k]));
+    switches.forEach((k) => ($(k).checked = s[k]));
+    document.querySelector(`input[name=peer_side][value=${s.peer_side}]`).checked = true;
+    document.querySelector(`input[name=keyboard][value=${s.keyboard}]`).checked = true;
+    $("speed").value = s.speed;
+    refresh();
+  }
+
+  function current() {
+    const s = {};
+    texts.forEach((k) => (s[k] = $(k).value));
+    switches.forEach((k) => (s[k] = $(k).checked));
+    s.peer_side = document.querySelector("input[name=peer_side]:checked").value;
+    s.keyboard = document.querySelector("input[name=keyboard]:checked").value;
+    s.speed = Number($("speed").value);
+    return s;
+  }
+
+  function refresh() {
+    $("speed-value").textContent = Number($("speed").value).toFixed(2) + "×";
+    $("kb-hint").textContent = kbHints[document.querySelector("input[name=keyboard]:checked").value];
+    const now = current();
+    $("save").disabled = Object.keys(initial).every((k) => now[k] === initial[k]);
+  }
+
+  // Called from Rust when saving failed.
+  window.saveFailed = (message, field) => {
+    const box = $("error");
+    box.textContent = message;
+    box.classList.add("shown");
+    texts.forEach((k) => $(k).setAttribute("aria-invalid", String(k === field)));
+    if (field) $(field).focus();
+    $("save").disabled = false;
+    $("save").textContent = "Save";
+  };
+
+  document.addEventListener("input", () => {
+    $("error").classList.remove("shown");
+    refresh();
+  });
+  $("save").addEventListener("click", () => {
+    $("save").disabled = true;
+    $("save").textContent = "Saving…";
+    post({ action: "save", settings: current() });
+  });
+  $("cancel").addEventListener("click", () => post({ action: "close" }));
+  $("open-file").addEventListener("click", () => post({ action: "open_file" }));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") post({ action: "close" });
+    if (e.key === "Enter" && !$("save").disabled) $("save").click();
+  });
+
+  load(initial);
+  $("peer").focus();
+</script>
+</body>
+</html>

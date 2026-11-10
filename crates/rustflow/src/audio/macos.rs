@@ -10,7 +10,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use futures::StreamExt;
 use tracing::{info, warn};
 
-use super::{Audio, CHANNELS, RETRY_AFTER, SAMPLE_RATE, audio_addr, handshake_client};
+use super::{Audio, CHANNELS, RETRY_AFTER, SAMPLE_RATE, audio_addr};
 use crate::config::Config;
 use crate::status::Shared;
 
@@ -68,7 +68,7 @@ async fn receive(
     shared: &Shared,
     label: &str,
 ) -> Result<()> {
-    let mut conn = handshake_client(addr, token).await?;
+    let mut conn = crate::net::side_connect(addr, token).await?;
     info!("audio: connected to {label}");
     shared.set_audio(format!("Audio: playing sound from {label}"));
     while let Some(frame) = conn.next().await {

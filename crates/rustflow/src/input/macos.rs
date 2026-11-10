@@ -25,6 +25,7 @@ use rustflow_proto::{Message, MouseButton};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
+use super::ViewArea;
 use super::keymap;
 use super::shortcuts::Translator;
 use crate::config::{self, KeyboardStyle, Side};
@@ -56,11 +57,22 @@ struct Inner {
     held_mods: HashSet<u16>,
     /// Mac keys → Linux keys, in the chosen keyboard style.
     keys: Translator,
+    /// The peer's screen window, while it has focus.
+    view: Option<ViewArea>,
+    /// Buttons pressed on that window's picture (their release goes to the peer too).
+    view_buttons: Vec<MouseButton>,
 }
 
 impl Inner {
     fn new(style: KeyboardStyle) -> Self {
-        Self { peer_screen: None, remote: None, held_mods: HashSet::new(), keys: Translator::new(style) }
+        Self {
+            peer_screen: None,
+            remote: None,
+            held_mods: HashSet::new(),
+            keys: Translator::new(style),
+            view: None,
+            view_buttons: Vec::new(),
+        }
     }
 
     /// Forget held keys (the peer releases everything on enter/leave).
@@ -136,6 +148,20 @@ impl State {
         self.update_line(false, ready);
     }
 
+    pub fn set_view_area(&self, area: Option<ViewArea>) {
+        let mut inner = self.inner.lock().unwrap();
+        let was_on = inner.view.is_some();
+        inner.view = area;
+        if was_on != area.is_some() && inner.remote.is_none() {
+            if was_on && inner.peer_screen.is_some() {
+                // Focus left the window: release whatever is held on the peer.
+                self.send(Message::Leave);
+            }
+            inner.view_buttons.clear();
+            inner.reset_keys();
+        }
+    }
+
     pub fn set_keyboard_style(&self, style: KeyboardStyle) {
         let mut inner = self.inner.lock().unwrap();
         if inner.remote.is_some() {
@@ -180,6 +206,9 @@ impl State {
         }
         let mut inner = self.inner.lock().unwrap();
         if inner.remote.is_none() {
+            if let Some(result) = self.on_view_event(&mut inner, etype, event) {
+                return result;
+            }
             if is_motion(etype) {
                 if let Some(screen) = inner.peer_screen {
                     if self.try_cross(&mut inner, event, screen) {
@@ -215,39 +244,11 @@ impl State {
             CGEventType::RightMouseDown => self.button(&mut inner, MouseButton::Right, true),
             CGEventType::RightMouseUp => self.button(&mut inner, MouseButton::Right, false),
             CGEventType::OtherMouseDown | CGEventType::OtherMouseUp => {
-                let button = match field(event, EventField::MOUSE_EVENT_BUTTON_NUMBER) {
-                    2 => MouseButton::Middle,
-                    3 => MouseButton::Back,
-                    4 => MouseButton::Forward,
-                    _ => return CallbackResult::Drop,
-                };
+                let Some(button) = other_button(event) else { return CallbackResult::Drop };
                 self.button(&mut inner, button, matches!(etype, CGEventType::OtherMouseDown));
             }
-            CGEventType::ScrollWheel => {
-                let continuous = field(event, EventField::SCROLL_WHEEL_EVENT_IS_CONTINUOUS) != 0;
-                let (dy, dx) = if continuous {
-                    (
-                        field(event, EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_1) as f64 / PIXELS_PER_NOTCH,
-                        field(event, EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_2) as f64 / PIXELS_PER_NOTCH,
-                    )
-                } else {
-                    (
-                        field(event, EventField::SCROLL_WHEEL_EVENT_DELTA_AXIS_1) as f64,
-                        field(event, EventField::SCROLL_WHEEL_EVENT_DELTA_AXIS_2) as f64,
-                    )
-                };
-                // macOS axis 2 is positive to the left; Linux REL_HWHEEL is positive to the right.
-                self.send(Message::Scroll { dx: -dx, dy });
-            }
-            CGEventType::KeyDown | CGEventType::KeyUp => {
-                // Linux repeats held keys itself.
-                if matches!(etype, CGEventType::KeyDown) && field(event, EventField::KEYBOARD_EVENT_AUTOREPEAT) != 0 {
-                    return CallbackResult::Drop;
-                }
-                let mac = field(event, EventField::KEYBOARD_EVENT_KEYCODE) as u16;
-                let keys = inner.keys.key(mac, matches!(etype, CGEventType::KeyDown));
-                self.send_keys(keys);
-            }
+            CGEventType::ScrollWheel => self.send(scroll(event)),
+            CGEventType::KeyDown | CGEventType::KeyUp => self.key(&mut inner, etype, event),
             CGEventType::FlagsChanged => {
                 let flags = event.get_flags().bits();
                 if flags & (CONTROL | OPTION | COMMAND) == CONTROL | OPTION | COMMAND {
@@ -261,6 +262,67 @@ impl State {
             _ => return CallbackResult::Keep,
         }
         CallbackResult::Drop
+    }
+
+    /// While the peer's screen window has focus: clicks and scrolls on its
+    /// picture and every key go to the peer. `None` leaves the event to the
+    /// normal (pointer on the Mac) handling.
+    fn on_view_event(&self, inner: &mut Inner, etype: CGEventType, event: &CGEvent) -> Option<CallbackResult> {
+        let area = inner.view?;
+        inner.peer_screen?; // not connected: nothing would arrive
+        let loc = event.location();
+        let on_picture = area.to_peer(loc.x, loc.y);
+        match etype {
+            t if is_motion(t) => {
+                let (x, y) = on_picture.or_else(|| {
+                    (!inner.view_buttons.is_empty()).then(|| area.to_peer_clamped(loc.x, loc.y))
+                })?;
+                self.send(Message::PointerTo { x, y });
+                // The Mac pointer keeps moving over the picture.
+                Some(CallbackResult::Keep)
+            }
+            CGEventType::LeftMouseDown | CGEventType::RightMouseDown | CGEventType::OtherMouseDown => {
+                let (x, y) = on_picture?;
+                let button = button_of(etype, event)?;
+                self.send(Message::PointerTo { x, y });
+                inner.view_buttons.push(button);
+                self.button(inner, button, true);
+                Some(CallbackResult::Drop)
+            }
+            CGEventType::LeftMouseUp | CGEventType::RightMouseUp | CGEventType::OtherMouseUp => {
+                let button = button_of(etype, event)?;
+                let held = inner.view_buttons.iter().position(|b| *b == button)?;
+                inner.view_buttons.remove(held);
+                self.button(inner, button, false);
+                Some(CallbackResult::Drop)
+            }
+            CGEventType::ScrollWheel => {
+                on_picture?;
+                self.send(scroll(event));
+                Some(CallbackResult::Drop)
+            }
+            CGEventType::KeyDown | CGEventType::KeyUp => {
+                self.key(inner, etype, event);
+                Some(CallbackResult::Drop)
+            }
+            CGEventType::FlagsChanged => {
+                let mac = field(event, EventField::KEYBOARD_EVENT_KEYCODE) as u16;
+                self.modifier(inner, mac, event.get_flags().bits());
+                Some(CallbackResult::Drop)
+            }
+            _ => None,
+        }
+    }
+
+    fn key(&self, inner: &mut Inner, etype: CGEventType, event: &CGEvent) {
+        let down = matches!(etype, CGEventType::KeyDown);
+        // Linux repeats held keys itself.
+        if down && field(event, EventField::KEYBOARD_EVENT_AUTOREPEAT) != 0 {
+            return;
+        }
+        let mac = field(event, EventField::KEYBOARD_EVENT_KEYCODE) as u16;
+        let keys = inner.keys.key(mac, down);
+        self.send_keys(keys);
     }
 
     fn button(&self, inner: &mut Inner, button: MouseButton, pressed: bool) {
@@ -349,6 +411,41 @@ fn is_motion(t: CGEventType) -> bool {
             | CGEventType::RightMouseDragged
             | CGEventType::OtherMouseDragged
     )
+}
+
+fn button_of(etype: CGEventType, event: &CGEvent) -> Option<MouseButton> {
+    match etype {
+        CGEventType::LeftMouseDown | CGEventType::LeftMouseUp => Some(MouseButton::Left),
+        CGEventType::RightMouseDown | CGEventType::RightMouseUp => Some(MouseButton::Right),
+        _ => other_button(event),
+    }
+}
+
+fn other_button(event: &CGEvent) -> Option<MouseButton> {
+    match field(event, EventField::MOUSE_EVENT_BUTTON_NUMBER) {
+        2 => Some(MouseButton::Middle),
+        3 => Some(MouseButton::Back),
+        4 => Some(MouseButton::Forward),
+        _ => None,
+    }
+}
+
+/// A wheel or trackpad scroll, in wheel notches.
+fn scroll(event: &CGEvent) -> Message {
+    let continuous = field(event, EventField::SCROLL_WHEEL_EVENT_IS_CONTINUOUS) != 0;
+    let (dy, dx) = if continuous {
+        (
+            field(event, EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_1) as f64 / PIXELS_PER_NOTCH,
+            field(event, EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_2) as f64 / PIXELS_PER_NOTCH,
+        )
+    } else {
+        (
+            field(event, EventField::SCROLL_WHEEL_EVENT_DELTA_AXIS_1) as f64,
+            field(event, EventField::SCROLL_WHEEL_EVENT_DELTA_AXIS_2) as f64,
+        )
+    };
+    // macOS axis 2 is positive to the left; Linux REL_HWHEEL is positive to the right.
+    Message::Scroll { dx: -dx, dy }
 }
 
 fn field(event: &CGEvent, f: CGEventField) -> i64 {
