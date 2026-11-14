@@ -247,7 +247,7 @@ impl State {
                 let Some(button) = other_button(event) else { return CallbackResult::Drop };
                 self.button(&mut inner, button, matches!(etype, CGEventType::OtherMouseDown));
             }
-            CGEventType::ScrollWheel => self.send(scroll(event)),
+            CGEventType::ScrollWheel => self.send(scroll(event, self.cfg.scroll_speed)),
             CGEventType::KeyDown | CGEventType::KeyUp => self.key(&mut inner, etype, event),
             CGEventType::FlagsChanged => {
                 let flags = event.get_flags().bits();
@@ -298,7 +298,7 @@ impl State {
             }
             CGEventType::ScrollWheel => {
                 on_picture?;
-                self.send(scroll(event));
+                self.send(scroll(event, self.cfg.scroll_speed));
                 Some(CallbackResult::Drop)
             }
             CGEventType::KeyDown | CGEventType::KeyUp => {
@@ -430,8 +430,8 @@ fn other_button(event: &CGEvent) -> Option<MouseButton> {
     }
 }
 
-/// A wheel or trackpad scroll, in wheel notches.
-fn scroll(event: &CGEvent) -> Message {
+/// A wheel or trackpad scroll, in wheel notches, times `speed`.
+fn scroll(event: &CGEvent, speed: f64) -> Message {
     let continuous = field(event, EventField::SCROLL_WHEEL_EVENT_IS_CONTINUOUS) != 0;
     let (dy, dx) = if continuous {
         (
@@ -445,7 +445,7 @@ fn scroll(event: &CGEvent) -> Message {
         )
     };
     // macOS axis 2 is positive to the left; Linux REL_HWHEEL is positive to the right.
-    Message::Scroll { dx: -dx, dy }
+    Message::Scroll { dx: -dx * speed, dy: dy * speed }
 }
 
 fn field(event: &CGEvent, f: CGEventField) -> i64 {

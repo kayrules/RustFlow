@@ -51,11 +51,13 @@ pub struct Input {
     pub keyboard: KeyboardStyle,
     /// Pointer speed on the peer (1.0 = one Mac point per peer pixel).
     pub speed: f64,
+    /// Scroll speed on the peer (1.0 = as sent by the trackpad or wheel).
+    pub scroll_speed: f64,
 }
 
 impl Default for Input {
     fn default() -> Self {
-        Self { enabled: true, peer_side: Side::Left, keyboard: KeyboardStyle::Mac, speed: 1.0 }
+        Self { enabled: true, peer_side: Side::Left, keyboard: KeyboardStyle::Mac, speed: 1.0, scroll_speed: 1.0 }
     }
 }
 
@@ -176,6 +178,7 @@ pub struct MacSettings {
     pub peer_side: Side,
     pub keyboard: KeyboardStyle,
     pub speed: f64,
+    pub scroll_speed: f64,
     pub ssh_host: String,
     pub audio_enabled: bool,
     pub screen_enabled: bool,
@@ -193,6 +196,7 @@ impl MacSettings {
             peer_side: c.input.peer_side,
             keyboard: c.input.keyboard,
             speed: c.input.speed,
+            scroll_speed: c.input.scroll_speed,
             ssh_host: c.files.ssh_host.clone().unwrap_or_default(),
             audio_enabled: c.audio.enabled,
             screen_enabled: c.screen.enabled,
@@ -220,6 +224,9 @@ impl MacSettings {
         }
         if !(0.1..=10.0).contains(&s.speed) {
             return Err(("speed", "Pointer speed must be between 0.1 and 10.".into()));
+        }
+        if !(0.05..=10.0).contains(&s.scroll_speed) {
+            return Err(("scroll_speed", "Scroll speed must be between 0.05 and 10.".into()));
         }
         if s.ssh_host.contains(char::is_whitespace) {
             return Err(("ssh_host", "The SSH host can't contain spaces.".into()));
@@ -281,6 +288,9 @@ impl MacSettings {
         }
         if self.speed != old.speed {
             doc["input"]["speed"] = toml_edit::value((self.speed * 100.0).round() / 100.0);
+        }
+        if self.scroll_speed != old.scroll_speed {
+            doc["input"]["scroll_speed"] = toml_edit::value((self.scroll_speed * 100.0).round() / 100.0);
         }
         if self.ssh_host != old.ssh_host {
             text_or_remove(&mut doc, Some("files"), "ssh_host", &self.ssh_host);
@@ -381,6 +391,7 @@ mod tests {
         let mut new = old.clone();
         new.peer_side = Side::Right;
         new.speed = 1.5;
+        new.scroll_speed = 0.5;
         new.ssh_host = "box".into();
         new.peer_name = String::new();
         new.wol_mac = String::new();

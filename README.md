@@ -198,6 +198,7 @@ restarts RustFlow to apply the changes.
 | `[input] peer_side` | Mac | `"left"` or `"right"` of the Mac screen |
 | `[input] keyboard` | Mac | `"mac"` (Mac shortcuts translated, default) or `"linux"` (PC layout) |
 | `[input] speed` | Mac | Pointer speed on Linux (default `1.0`) |
+| `[input] scroll_speed` | Mac | Scroll speed on Linux, trackpad and wheel (default `1.0`) |
 | `[input] enabled` | Mac | Share keyboard and mouse (default `true`) |
 | `[files] ssh_host` | Mac | SSH host of Linux for file paste; empty turns it off |
 | `[wol] mac`, `[wol] broadcast` | Mac | Wake-on-LAN target and LAN broadcast address |

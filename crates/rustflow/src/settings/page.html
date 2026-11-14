@@ -202,6 +202,13 @@
         <output id="speed-value" for="speed"></output>
       </div>
     </div>
+    <div class="row">
+      <label for="scroll_speed">Scroll speed on Linux<span class="hint">Trackpad and mouse wheel</span></label>
+      <div class="slider">
+        <input type="range" id="scroll_speed" min="0.1" max="3" step="0.05">
+        <output id="scroll_speed-value" for="scroll_speed"></output>
+      </div>
+    </div>
   </div>
 
   <h2>FILES, AUDIO &amp; SCREEN</h2>
@@ -260,6 +267,7 @@
     document.querySelector(`input[name=peer_side][value=${s.peer_side}]`).checked = true;
     document.querySelector(`input[name=keyboard][value=${s.keyboard}]`).checked = true;
     $("speed").value = s.speed;
+    $("scroll_speed").value = s.scroll_speed;
     refresh();
   }
 
@@ -270,11 +278,13 @@
     s.peer_side = document.querySelector("input[name=peer_side]:checked").value;
     s.keyboard = document.querySelector("input[name=keyboard]:checked").value;
     s.speed = Number($("speed").value);
+    s.scroll_speed = Number($("scroll_speed").value);
     return s;
   }
 
   function refresh() {
     $("speed-value").textContent = Number($("speed").value).toFixed(2) + "×";
+    $("scroll_speed-value").textContent = Number($("scroll_speed").value).toFixed(2) + "×";
     $("kb-hint").textContent = kbHints[document.querySelector("input[name=keyboard]:checked").value];
     const now = current();
     $("save").disabled = Object.keys(initial).every((k) => now[k] === initial[k]);

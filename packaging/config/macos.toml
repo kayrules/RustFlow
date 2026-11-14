@@ -17,6 +17,8 @@ peer_side = "@PEER_SIDE@"
 keyboard = "mac"
 # Pointer speed on Linux (1.0 = one Mac point per Linux pixel).
 speed = 1.0
+# Scroll speed on Linux (1.0 = unchanged; 0.5 = half as fast).
+scroll_speed = 1.0
 
 [files]
 # SSH host for the Linux machine; pasted files are copied with scp.
