@@ -285,7 +285,7 @@ async fn serve_files(portal: Portal, broker: FileBroker, remote: Arc<RemoteFiles
 async fn write_selection(cb: &Clipboard, session: &Session<RemoteDesktop>, serial: u32, bytes: Vec<u8>) -> bool {
     let ok = match cb.selection_write(session, serial).await {
         Ok(fd) => {
-            let fd: OwnedFd = fd.into();
+            let fd = make_blocking(fd.into());
             let res = tokio::task::spawn_blocking(move || std::fs::File::from(fd).write_all(&bytes)).await;
             matches!(res, Ok(Ok(())))
         }
@@ -299,7 +299,7 @@ async fn write_selection(cb: &Clipboard, session: &Session<RemoteDesktop>, seria
 }
 
 async fn read_selection(cb: &Clipboard, session: &Session<RemoteDesktop>, mime: &str) -> Result<String> {
-    let fd: OwnedFd = cb.selection_read(session, mime).await?.into();
+    let fd = make_blocking(cb.selection_read(session, mime).await?.into());
     // The source app writes into a pipe; read it off the async runtime.
     let read = tokio::task::spawn_blocking(move || {
         let mut buf = Vec::new();
@@ -308,6 +308,22 @@ async fn read_selection(cb: &Clipboard, session: &Session<RemoteDesktop>, mime: 
     });
     let bytes = timeout(READ_TIMEOUT, read).await.context("clipboard read timed out")???;
     Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// The portal hands us non-blocking pipes. Reading one before the source app
+/// has written fails with EAGAIN, which slow sources like `wl-copy` (tmux,
+/// terminals) hit often. We read on a blocking thread, so block instead.
+fn make_blocking(fd: OwnedFd) -> OwnedFd {
+    use std::os::fd::AsRawFd;
+    let raw = fd.as_raw_fd();
+    // SAFETY: `raw` is a valid fd owned by `fd` for the duration of these calls.
+    unsafe {
+        let flags = libc::fcntl(raw, libc::F_GETFL);
+        if flags >= 0 && flags & libc::O_NONBLOCK != 0 {
+            libc::fcntl(raw, libc::F_SETFL, flags & !libc::O_NONBLOCK);
+        }
+    }
+    fd
 }
 
 /// Files pasted earlier were copied out by the file manager; drop the old copies.
